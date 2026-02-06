@@ -89,13 +89,13 @@ data/questions/symbol_insert_task/{task_id}/
 
 - **first_frame.png**: Shows the initial sequence of symbols (e.g., [●, ▲, ■, ★])
 - **final_frame.png**: Shows the final sequence with new symbol inserted (e.g., [●, ▲, ◆, ■, ★])
-- **prompt.txt**: Contains instructions specifying which symbol to insert and at which position (e.g., "Insert symbol ◆ at position 3")
+- **prompt.txt**: Contains unified instruction format: "Insert {symbol} at position {position}. The animation shows the new symbol fading in above the target position, then sliding down while other symbols shift to make room."
 - **ground_truth.mp4**: Animated video showing:
   - Initial sequence held for 0.5s
   - New symbol fading in above target position (0.8s)
   - Symbol sliding down while others shift right (1.0s)
   - Final sequence held for 0.5s
-  - **Total duration: ~2.8 seconds**
+  - **Total duration: ~2.8 seconds at 16 FPS**
 
 ---
 
@@ -106,7 +106,7 @@ All task parameters are configured in `src/config.py`:
 ```python
 class TaskConfig(GenerationConfig):
     domain: str = "symbol_insert"
-    image_size: tuple[int, int] = (800, 200)
+    image_size: tuple[int, int] = (1024, 1024)  # Unified 1:1 aspect ratio
 
     # Symbol set selection
     symbol_set: str = "shapes"  # Options: shapes, letters, numbers, mixed
@@ -116,11 +116,11 @@ class TaskConfig(GenerationConfig):
     max_sequence_length: int = 8   # Maximum symbols in initial sequence
 
     # Visual configuration
-    symbol_size: int = 60          # Symbol size in pixels
+    symbol_size: int = 85          # Symbol size in pixels
 
     # Video settings
     generate_videos: bool = True
-    video_fps: int = 10
+    video_fps: int = 16            # Unified frame rate
 ```
 
 ### Available Symbol Sets
@@ -240,22 +240,26 @@ No specialized dependencies required (unlike chess, maze solvers, etc.)
   - Fade in: 8 frames (0.8s)
   - Slide & shift: 10 frames (1.0s)
   - Hold final: 5 frames (0.5s)
-- **Total**: 28 frames at 10 FPS = **2.8 seconds**
+- **Total**: 28 frames at 16 FPS = **~1.75 seconds**
+- **Resolution**: 1024×1024 (1:1 aspect ratio)
+- **Codec**: H.264 with fallback to mp4v
 - **Status**: ✅ Well under 10-second limit
 
 ### Prompt Specifications
 
+- **Format**: Unified single template
+- **Structure**: "Insert {symbol} at position {position}. The animation shows the new symbol fading in above the target position, then sliding down while other symbols shift to make room."
 - **Average length**: ~32 words
-- **Format**: "Insert symbol {S} at position {P}. [Animation description]"
-- **Status**: ✅ Well under 200-word limit
+- **Status**: ✅ Consistent structure, well under 200-word limit
 
 ---
 
 ## 🎨 Visual Design
 
+- **Resolution**: 1024×1024 (unified 1:1 aspect ratio)
 - **Background**: Pure white (255, 255, 255)
 - **Symbol Colors**: 10 distinct colors from a diverse palette
-- **Symbol Size**: 60 pixels (configurable)
+- **Symbol Size**: 85 pixels (configurable)
 - **Spacing**: 20 pixels between symbols
 - **Centering**: Sequences are centered horizontally and vertically
 
@@ -268,8 +272,12 @@ Based on 100-sample test:
 | Metric | Result | Target | Status |
 |--------|--------|--------|--------|
 | Uniqueness | 99% | >95% | ✅ Pass |
-| Video Length | 2.8s | <10s | ✅ Pass |
+| Video Length | ~1.75s | <10s | ✅ Pass |
 | Prompt Length | 32 words | <200 words | ✅ Pass |
+| Prompt Structure | Unified | Consistent | ✅ Pass |
+| Resolution | 1024×1024 | 1:1 ratio | ✅ Pass |
+| Frame Rate | 16 FPS | Unified | ✅ Pass |
+| Video Codec | H.264/mp4v | Compatible | ✅ Pass |
 | Generation Speed | ~1 sample/sec | N/A | ✅ Fast |
 | Solution Uniqueness | 100% | 100% | ✅ Pass |
 
