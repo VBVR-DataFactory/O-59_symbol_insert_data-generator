@@ -34,7 +34,7 @@ class TaskConfig(GenerationConfig):
     # ══════════════════════════════════════════════════════════════════════════
 
     domain: str = Field(default="symbol_insert")
-    image_size: tuple[int, int] = Field(default=(800, 200))
+    image_size: tuple[int, int] = Field(default=(1024, 1024))
 
     # ══════════════════════════════════════════════════════════════════════════
     #  VIDEO SETTINGS
@@ -46,7 +46,7 @@ class TaskConfig(GenerationConfig):
     )
 
     video_fps: int = Field(
-        default=10,
+        default=16,
         description="Video frame rate"
     )
 
@@ -74,8 +74,8 @@ class TaskConfig(GenerationConfig):
     )
 
     symbol_size: int = Field(
-        default=60,
+        default=85,
         ge=40,
-        le=100,
+        le=120,
         description="Size of each symbol in pixels"
     )

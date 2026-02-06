@@ -39,7 +39,7 @@ class VideoGenerator:
         
         # Use H.264 for mp4 (better compatibility) or XVID for avi
         if output_format == "mp4":
-            self.codec = 'mp4v'  # Most compatible mp4 codec
+            self.codec = self._select_codec()  # Try multiple H.264 codecs
             self.extension = '.mp4'
         else:
             self.codec = 'XVID'
@@ -47,6 +47,36 @@ class VideoGenerator:
         
         if not CV2_AVAILABLE:
             raise ImportError("opencv-python is required for video generation")
+    
+    def _select_codec(self) -> str:
+        """
+        Select the best available H.264 codec.
+        
+        Returns:
+            Codec string for cv2.VideoWriter_fourcc
+        """
+        # Try H.264 variants in order of preference
+        codecs = ['avc1', 'H264', 'X264', 'mp4v']
+        
+        for codec in codecs:
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+                # Test if codec is available by creating a dummy writer
+                test_writer = cv2.VideoWriter(
+                    'test.mp4', fourcc, self.fps, (100, 100), isColor=True
+                )
+                if test_writer.isOpened():
+                    test_writer.release()
+                    import os
+                    if os.path.exists('test.mp4'):
+                        os.remove('test.mp4')
+                    return codec
+                test_writer.release()
+            except:
+                continue
+        
+        # Fallback to mp4v if no H.264 codec is available
+        return 'mp4v'
     
     @staticmethod
     def is_available() -> bool:
@@ -91,7 +121,8 @@ class VideoGenerator:
             str(output_path),
             fourcc,
             self.fps,
-            (width, height)
+            (width, height),
+            isColor=True
         )
         
         # Write frames
@@ -102,7 +133,7 @@ class VideoGenerator:
             
             # Convert PIL Image to OpenCV format (BGR)
             frame_rgb = frame.convert('RGB')
-            frame_array = np.array(frame_rgb)
+            frame_array = np.array(frame_rgb, dtype=np.uint8)
             frame_bgr = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
             
             writer.write(frame_bgr)
