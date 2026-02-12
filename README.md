@@ -72,9 +72,9 @@ Insert a blue ▲ at position 1. The animation shows the new symbol fading in ab
 
 <table>
 <tr>
-  <td align="center"><img src="samples/O-59_first_0.png" width="200"/></td>
-  <td align="center"><img src="samples/O-59_video_0.gif" width="200"/></td>
-  <td align="center"><img src="samples/O-59_final_0.png" width="200"/></td>
+  <td align="center"><img src="samples/O-59_first_0.png" width="250"/></td>
+  <td align="center"><img src="samples/O-59_video_0.gif" width="400"/></td>
+  <td align="center"><img src="samples/O-59_final_0.png" width="250"/></td>
 </tr>
 <tr>
   <td align="center"><b>Initial Frame</b><br/>Symbol sequence before insertion</td>
