@@ -87,13 +87,26 @@ class SymbolInsertGenerator(BaseGenerator):
         # Get prompt (1-indexed position for human readability)
         prompt = get_prompt(insert_symbol, insert_color_name, insert_position + 1)
 
+        # Build object-centric metadata
+        optimized_task_data = self._build_objects_metadata(
+            initial_sequence=sequence,
+            final_sequence=final_sequence,
+            insert_position=insert_position,
+            insert_symbol=insert_symbol,
+            insert_color_name=insert_color_name
+        )
+        
+        # Build metadata
+        metadata = self._build_metadata(task_id, optimized_task_data)
+        
         return TaskPair(
             task_id=task_id,
             domain=self.config.domain,
             prompt=prompt,
             first_image=first_image,
             final_image=final_image,
-            ground_truth_video=video_path
+            ground_truth_video=video_path,
+            metadata=metadata
         )
 
     def _render_sequence(self, sequence: List[Tuple[str, str]]) -> Image.Image:
@@ -450,3 +463,73 @@ class SymbolInsertGenerator(BaseGenerator):
         self._draw_symbol(draw, new_symbol, x, new_symbol_y, symbol_size, new_color, font)
 
         return img
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  METADATA BUILDING
+    # ══════════════════════════════════════════════════════════════════════════
+    
+    def _build_objects_metadata(
+        self,
+        initial_sequence: List[Tuple[str, str]],
+        final_sequence: List[Tuple[str, str]],
+        insert_position: int,
+        insert_symbol: str,
+        insert_color_name: str
+    ) -> dict:
+        """
+        Build object-centric metadata for symbol insert task.
+        
+        Args:
+            initial_sequence: Initial sequence of (symbol, color_name) tuples
+            final_sequence: Final sequence after insertion
+            insert_position: 0-indexed position where symbol is inserted
+            insert_symbol: Symbol that was inserted
+            insert_color_name: Color name of inserted symbol
+            
+        Returns:
+            Dictionary with object-centric metadata
+        """
+        from typing import Dict, Any
+        from .config import ALL_COLOR_NAMES
+        
+        # Create objects for each symbol in the final sequence
+        objects = []
+        for i, (symbol, color_name) in enumerate(final_sequence):
+            color_rgb = ALL_COLOR_NAMES.get(color_name, (0, 0, 0))
+            is_inserted = (i == insert_position)
+            
+            obj = {
+                "symbol": f"symbol_{i}",
+                "index": i,
+                "symbol_char": symbol,
+                "color_name": color_name,
+                "color_rgb": list(color_rgb),
+                "is_inserted": is_inserted
+            }
+            
+            # Add initial position information
+            if is_inserted:
+                # This is the newly inserted symbol
+                obj["initial_index"] = None
+            else:
+                # Find position in initial sequence
+                if i < insert_position:
+                    initial_index = i
+                else:
+                    initial_index = i - 1
+                obj["initial_index"] = initial_index
+            
+            objects.append(obj)
+        
+        # Build task-specific metadata
+        optimized_task_data = {
+            "initial_sequence_length": len(initial_sequence),
+            "final_sequence_length": len(final_sequence),
+            "insert_position": insert_position,
+            "insert_symbol": insert_symbol,
+            "insert_color_name": insert_color_name,
+            "insert_color_rgb": list(ALL_COLOR_NAMES.get(insert_color_name, (0, 0, 0))),
+            "objects": objects
+        }
+        
+        return optimized_task_data

@@ -1,1 +1,1 @@
-Insert a blue ▲ at position 1. The animation shows the new symbol fading in above the target position, then sliding down while other symbols shift to make room.
+Insert a red ● at position 7. The animation shows the new symbol fading in above the target position, then sliding down while other symbols shift to make room.
