@@ -37,7 +37,7 @@ class VideoGenerator:
         self.fps = fps
         self.output_format = output_format
         
-        # Use H.264 for mp4 (better compatibility) or XVID for avi
+        # Use mp4v for mp4 (standard MP4 codec) or XVID for avi
         if output_format == "mp4":
             self.codec = self._select_codec()  # Try multiple H.264 codecs
             self.extension = '.mp4'
@@ -56,7 +56,7 @@ class VideoGenerator:
             Codec string for cv2.VideoWriter_fourcc
         """
         # Try H.264 variants in order of preference
-        codecs = ['avc1', 'H264', 'X264', 'mp4v']
+        codecs = ['mp4v', 'XVID']
         
         for codec in codecs:
             try:

@@ -65,9 +65,8 @@ python examples/generate.py --num-samples 100 --output data/my_output
 ### Prompt
 
 ```
-Insert a blue ▲ at position 1. The animation shows the new symbol fading in above the target position, then sliding down while other symbols shift to make room.
+Insert a red ● at position 7. The animation shows the new symbol fading in above the target position, then sliding down while other symbols shift to make room.
 ```
-
 ### Visual
 
 <table>
@@ -115,15 +114,14 @@ Insert a new symbol at a specific position in a sequence, with the animation sho
 ## 📦 Data Format
 
 ```
-data/questions/symbol_insert_task/
-├── symbol_insert_0000/
-│   ├── first_frame.png          # Initial state (sequence before insertion)
-│   ├── final_frame.png          # Goal state (sequence after insertion)
-│   ├── prompt.txt               # Task instructions
-│   └── ground_truth.mp4         # Solution video (16 fps)
-├── symbol_insert_0001/
-│   └── ...
+data/questions/symbol_insert_task/symbol_insert_00000000/
+├── first_frame.png      # Initial state (sequence before insertion)
+├── final_frame.png      # Goal state (sequence after insertion)
+├── prompt.txt           # Task instructions
+├── ground_truth.mp4     # Solution video (16 fps)
+└── question_metadata.json # Task metadata
 ```
+
 
 **File specifications**: Images are 1024×1024 PNG. Videos are MP4 at 16 fps, approximately 2-3 seconds long.
 
