@@ -12,7 +12,7 @@ Each sample pairs a **task** (first frame + prompt describing what needs to happ
 |----------|-------|
 | **Task ID** | O-59 |
 | **Task** | Symbol Insert |
-| **Category** | Abstraction |
+| **Category** | Transformation |
 | **Resolution** | 1024×1024 px |
 | **FPS** | 16 fps |
 | **Duration** | ~2-3 seconds |
