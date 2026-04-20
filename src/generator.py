@@ -42,6 +42,12 @@ class SymbolInsertGenerator(BaseGenerator):
         self.border_color = (60, 60, 60)
         self.text_color = (40, 40, 40)
 
+    def _centered_start_x(self, center_x: int, slot_count: int, spacing: int) -> int:
+        """Return x of the first slot center so the row is centered."""
+        if slot_count <= 1:
+            return center_x
+        return int(round(center_x - ((slot_count - 1) * spacing) / 2.0))
+
     def generate_task_pair(self, task_id: str) -> TaskPair:
         """Generate one symbol insertion task with color information."""
         # Generate initial sequence length
@@ -121,8 +127,7 @@ class SymbolInsertGenerator(BaseGenerator):
         # Calculate symbol spacing
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
-        total_width = len(sequence) * spacing - 20
-        start_x = (width - total_width) // 2
+        start_x = self._centered_start_x(width // 2, len(sequence), spacing)
         center_y = height // 2
 
         # Load font - try fonts with good Unicode symbol support
@@ -275,8 +280,7 @@ class SymbolInsertGenerator(BaseGenerator):
         
         # Fixed slot grid for the entire sample.
         slot_count = max(len(initial_seq), len(final_seq))
-        slot_total_width = slot_count * spacing - 20
-        fixed_start_x = fixed_center_x - (slot_total_width // 2)
+        fixed_start_x = self._centered_start_x(fixed_center_x, slot_count, spacing)
 
         # Get color RGB for new symbol
         insert_color_rgb = ALL_COLOR_NAMES.get(insert_color_name, (0, 0, 0))
