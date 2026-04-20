@@ -134,23 +134,71 @@ class SymbolInsertGenerator(BaseGenerator):
             x = start_x + i * spacing
             color_rgb = ALL_COLOR_NAMES.get(color_name, (0, 0, 0))
             self._draw_symbol(draw, symbol, x, center_y, symbol_size, color_rgb, font)
+        self._draw_add_candidate_panel(draw, symbol_size)
 
         return img
 
     def _draw_symbol(self, draw: ImageDraw.Draw, symbol: str, x: int, y: int,
                     size: int, color: tuple, font: ImageFont.FreeTypeFont):
         """Draw a single symbol at position (x, y)."""
-        # Get text bounding box
-        bbox = draw.textbbox((0, 0), symbol, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-
-        # Center the text
-        text_x = x - text_width // 2
-        text_y = y - text_height // 2
+        max_side = max(12, size - 12)
+        fit_font, bbox = self._fit_symbol_font(draw, symbol, font, max_side, max_side)
+        # Center using real glyph bbox (handles Unicode baseline offsets)
+        text_x = int(round(x - (bbox[0] + bbox[2]) / 2))
+        text_y = int(round(y - (bbox[1] + bbox[3]) / 2))
+        dx, dy = self._get_optical_center_offset(symbol, fit_font)
+        text_x += dx
+        text_y += dy
 
         # Draw the symbol
-        draw.text((text_x, text_y), symbol, fill=color, font=font)
+        draw.text((text_x, text_y), symbol, fill=color, font=fit_font)
+
+    def _get_optical_center_offset(self, symbol: str, font: ImageFont.FreeTypeFont) -> tuple[int, int]:
+        """Measure rendered ink center and return correction offset."""
+        if not hasattr(self, "_optical_center_cache"):
+            self._optical_center_cache = {}
+        key = (symbol, getattr(font, "size", 0))
+        if key in self._optical_center_cache:
+            return self._optical_center_cache[key]
+
+        canvas = max(64, int(getattr(font, "size", 32) * 4))
+        tmp = Image.new("L", (canvas, canvas), 0)
+        tmp_draw = ImageDraw.Draw(tmp)
+        bbox = tmp_draw.textbbox((0, 0), symbol, font=font)
+        tx = int(round(canvas / 2 - (bbox[0] + bbox[2]) / 2))
+        ty = int(round(canvas / 2 - (bbox[1] + bbox[3]) / 2))
+        tmp_draw.text((tx, ty), symbol, fill=255, font=font)
+        ink_bbox = tmp.getbbox()
+        if ink_bbox is None:
+            self._optical_center_cache[key] = (0, 0)
+            return (0, 0)
+
+        ink_cx = (ink_bbox[0] + ink_bbox[2]) / 2
+        ink_cy = (ink_bbox[1] + ink_bbox[3]) / 2
+        dx = int(round(canvas / 2 - ink_cx))
+        dy = int(round(canvas / 2 - ink_cy))
+        self._optical_center_cache[key] = (dx, dy)
+        return (dx, dy)
+
+    def _fit_symbol_font(
+        self,
+        draw: ImageDraw.Draw,
+        symbol: str,
+        base_font: ImageFont.FreeTypeFont,
+        max_width: int,
+        max_height: int,
+    ) -> tuple[ImageFont.FreeTypeFont, tuple]:
+        """Pick the largest font that keeps glyph fully inside slot bounds."""
+        start_size = getattr(base_font, "size", self.config.symbol_size)
+        for sz in range(start_size, 7, -1):
+            f = self._get_unicode_font(sz)
+            bbox = draw.textbbox((0, 0), symbol, font=f)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            if tw <= max_width and th <= max_height:
+                return f, bbox
+        fallback = self._get_unicode_font(8)
+        return fallback, draw.textbbox((0, 0), symbol, font=fallback)
 
     def _get_unicode_font(self, font_size: int) -> ImageFont.FreeTypeFont:
         """Get a font that supports Unicode symbols well."""
@@ -225,18 +273,21 @@ class SymbolInsertGenerator(BaseGenerator):
         # Calculate fixed center position (prevents jumping)
         fixed_center_x = width // 2  # Fixed center point (never changes)
         
-        # Calculate start positions for initial and final sequences
-        initial_total_width = len(initial_seq) * spacing - 20
-        initial_start_x = fixed_center_x - (initial_total_width // 2)
-        
-        final_total_width = len(final_seq) * spacing - 20
-        final_start_x = fixed_center_x - (final_total_width // 2)
-
-        # Show initial sequence (centered at fixed position)
-        frames.extend([self._render_sequence_fixed(initial_seq, initial_start_x)] * hold_frames)
+        # Fixed slot grid for the entire sample.
+        slot_count = max(len(initial_seq), len(final_seq))
+        slot_total_width = slot_count * spacing - 20
+        fixed_start_x = fixed_center_x - (slot_total_width // 2)
 
         # Get color RGB for new symbol
         insert_color_rgb = ALL_COLOR_NAMES.get(insert_color_name, (0, 0, 0))
+        self._candidate_add_symbol = insert_symbol
+        self._candidate_add_color = insert_color_rgb
+
+        # Show initial sequence (centered at fixed position)
+        hi = min(insert_pos, max(0, slot_count - 1))
+        frames.extend(
+            [self._render_sequence_fixed(initial_seq, fixed_start_x, slot_count, hi)] * hold_frames
+        )
         
         # Check if insertion is at boundary (leftmost or rightmost)
         is_leftmost = (insert_pos == 0)
@@ -246,36 +297,98 @@ class SymbolInsertGenerator(BaseGenerator):
         # Phase 1: Existing symbols shift left/right to make space (only for middle insertions)
         if not is_boundary:
             for i in range(shift_frames):
-                progress = (i + 1) / shift_frames
+                progress = i / max(1, shift_frames - 1)
                 frame = self._render_shift_frame(
-                    initial_seq, insert_pos, progress, initial_start_x, final_start_x
+                    initial_seq, insert_pos, progress, fixed_start_x, fixed_start_x, slot_count
                 )
                 frames.append(frame)
 
         # Phase 2: New symbol fades in above the gap
         for i in range(fade_frames):
-            progress = (i + 1) / fade_frames
+            progress = i / max(1, fade_frames - 1)
             frame = self._render_fade_in_frame(
                 initial_seq, insert_symbol, insert_color_rgb, insert_pos, progress,
-                is_boundary, initial_start_x, final_start_x
+                is_boundary, fixed_start_x, fixed_start_x, slot_count
             )
             frames.append(frame)
 
         # Phase 3: New symbol slides down into the gap
         for i in range(slide_frames):
-            progress = (i + 1) / slide_frames
+            progress = i / max(1, slide_frames - 1)
             frame = self._render_slide_down_frame(
                 initial_seq, insert_symbol, insert_color_rgb, insert_pos, progress,
-                is_boundary, initial_start_x, final_start_x
+                is_boundary, fixed_start_x, fixed_start_x, slot_count
             )
             frames.append(frame)
 
         # Show final sequence (centered at fixed position)
-        frames.extend([self._render_sequence_fixed(final_seq, final_start_x)] * hold_frames)
+        frames.extend(
+            [self._render_sequence_fixed(final_seq, fixed_start_x, slot_count, None)] * hold_frames
+        )
 
         return frames
 
-    def _render_sequence_fixed(self, sequence: List[Tuple[str, str]], start_x: int) -> Image.Image:
+    def _draw_position_slots_unicode(
+        self,
+        draw: ImageDraw.Draw,
+        total_slots: int,
+        start_x: int,
+        spacing: int,
+        center_y: int,
+        symbol_size: int,
+        highlight_index: Optional[int],
+    ) -> None:
+        slot_gap = 8
+        half = max(symbol_size // 2 + 4, (spacing - slot_gap) // 2)
+        try:
+            label_font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28
+            )
+        except OSError:
+            try:
+                label_font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 28)
+            except OSError:
+                label_font = ImageFont.load_default()
+        for i in range(total_slots):
+            cx = start_x + i * spacing
+            box = [cx - half, center_y - half, cx + half, center_y + half]
+            if highlight_index is not None and i == highlight_index:
+                draw.rectangle(box, outline=(220, 70, 55), width=4)
+            else:
+                draw.rectangle(box, outline=(170, 170, 170), width=1)
+            lab = str(i + 1)
+            bbox = draw.textbbox((0, 0), lab, font=label_font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.text((cx - tw // 2, center_y + half + 20), lab, fill=(70, 70, 70), font=label_font)
+
+    def _draw_add_candidate_panel(self, draw: ImageDraw.Draw, symbol_size: int) -> None:
+        symbol = getattr(self, "_candidate_add_symbol", None)
+        color = getattr(self, "_candidate_add_color", None)
+        if symbol is None or color is None:
+            return
+
+        width, _ = self.config.image_size
+        panel_w = max(90, symbol_size + 34)
+        panel_h = max(90, symbol_size + 34)
+        margin = 18
+        left = width - panel_w - margin
+        top = margin
+        right = left + panel_w
+        bottom = top + panel_h
+
+        draw.rectangle([left, top, right, bottom], outline=(165, 165, 165), width=1, fill=(255, 255, 255))
+        cx = left + panel_w // 2
+        cy = top + panel_h // 2
+        font = self._get_unicode_font(symbol_size)
+        self._draw_symbol(draw, symbol, cx, cy, symbol_size, color, font)
+
+    def _render_sequence_fixed(
+        self,
+        sequence: List[Tuple[str, str]],
+        start_x: int,
+        slot_count: int,
+        highlight_slot: Optional[int] = None,
+    ) -> Image.Image:
         """Render a sequence of symbols with colors at a fixed start position."""
         width, height = self.config.image_size
         img = Image.new("RGB", (width, height), self.bg_color)
@@ -288,16 +401,22 @@ class SymbolInsertGenerator(BaseGenerator):
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
         center_y = height // 2
+        symbol_center_y = center_y
 
         # Load font
         font_size = symbol_size
         font = self._get_unicode_font(font_size)
 
+        self._draw_position_slots_unicode(
+            draw, slot_count, start_x, spacing, center_y, symbol_size, highlight_slot
+        )
+        self._draw_add_candidate_panel(draw, symbol_size)
+
         # Draw each symbol with its color at fixed positions
         for i, (symbol, color_name) in enumerate(sequence):
             x = start_x + i * spacing
             color_rgb = ALL_COLOR_NAMES.get(color_name, (0, 0, 0))
-            self._draw_symbol(draw, symbol, x, center_y, symbol_size, color_rgb, font)
+            self._draw_symbol(draw, symbol, x, symbol_center_y, symbol_size, color_rgb, font)
 
         return img
 
@@ -307,17 +426,25 @@ class SymbolInsertGenerator(BaseGenerator):
         insert_pos: int,
         progress: float,
         current_start_x: int,
-        next_start_x: int
+        next_start_x: int,
+        slot_count: int,
     ) -> Image.Image:
         """Render frame with symbols shifting left/right to make space."""
         width, height = self.config.image_size
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
         center_y = height // 2
+        symbol_center_y = center_y
 
         img = Image.new("RGB", (width, height), self.bg_color)
         draw = ImageDraw.Draw(img)
         font = self._get_unicode_font(symbol_size)
+
+        hi = min(insert_pos, max(0, len(sequence) - 1))
+        self._draw_position_slots_unicode(
+            draw, slot_count, current_start_x, spacing, center_y, symbol_size, hi
+        )
+        self._draw_add_candidate_panel(draw, symbol_size)
 
         # Draw symbols with interpolated positions
         for i, (symbol, color_name) in enumerate(sequence):
@@ -333,7 +460,7 @@ class SymbolInsertGenerator(BaseGenerator):
                 current_x = initial_x + (final_x - initial_x) * progress
 
             color_rgb = ALL_COLOR_NAMES.get(color_name, (0, 0, 0))
-            self._draw_symbol(draw, symbol, int(current_x), center_y, symbol_size, color_rgb, font)
+            self._draw_symbol(draw, symbol, int(current_x), symbol_center_y, symbol_size, color_rgb, font)
 
         return img
 
@@ -346,30 +473,38 @@ class SymbolInsertGenerator(BaseGenerator):
         fade_progress: float,
         is_boundary: bool,
         current_start_x: int,
-        next_start_x: int
+        next_start_x: int,
+        slot_count: int,
     ) -> Image.Image:
         """Render frame with new symbol fading in above the gap."""
         width, height = self.config.image_size
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
         center_y = height // 2
+        symbol_center_y = center_y
 
         # Create base image
         img = Image.new('RGB', (width, height), self.bg_color)
         draw = ImageDraw.Draw(img)
         font = self._get_unicode_font(symbol_size)
 
+        hi = min(insert_pos, max(0, slot_count - 1))
+        self._draw_position_slots_unicode(
+            draw, slot_count, current_start_x, spacing, center_y, symbol_size, hi
+        )
+        self._draw_add_candidate_panel(draw, symbol_size)
+
         if is_boundary:
             # Boundary insertion: sequence stays in place
             for i, (symbol, color_name) in enumerate(sequence):
-                x = current_start_x + i * spacing
+                shift = 1 if insert_pos == 0 else 0
+                x = current_start_x + (i + shift) * spacing
                 color_rgb = ALL_COLOR_NAMES.get(color_name, (0, 0, 0))
-                self._draw_symbol(draw, symbol, x, center_y, symbol_size, color_rgb, font)
+                self._draw_symbol(draw, symbol, x, symbol_center_y, symbol_size, color_rgb, font)
             
             # Calculate where new symbol will appear
             if insert_pos == 0:
-                # Leftmost: symbol appears to the left of first symbol
-                x = current_start_x - spacing
+                x = current_start_x
             else:
                 # Rightmost: symbol appears to the right of last symbol
                 x = current_start_x + len(sequence) * spacing
@@ -381,13 +516,13 @@ class SymbolInsertGenerator(BaseGenerator):
                 else:
                     x = next_start_x + (i + 1) * spacing
                 color_rgb = ALL_COLOR_NAMES.get(color_name, (0, 0, 0))
-                self._draw_symbol(draw, symbol, x, center_y, symbol_size, color_rgb, font)
+                self._draw_symbol(draw, symbol, x, symbol_center_y, symbol_size, color_rgb, font)
             
             # New symbol appears in the gap
             x = next_start_x + insert_pos * spacing
 
         # Calculate new symbol position above the line
-        new_symbol_y = center_y - symbol_size
+        new_symbol_y = symbol_center_y - symbol_size
 
         # Create overlay for fading symbol
         overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
@@ -397,13 +532,16 @@ class SymbolInsertGenerator(BaseGenerator):
         alpha = int(255 * fade_progress)
         rgba_color = (*new_color, alpha)
 
-        bbox = overlay_draw.textbbox((0, 0), new_symbol, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        text_x = x - text_width // 2
-        text_y = new_symbol_y - text_height // 2
+        fit_font, bbox = self._fit_symbol_font(
+            overlay_draw, new_symbol, font, max(12, symbol_size - 12), max(12, symbol_size - 12)
+        )
+        text_x = int(round(x - (bbox[0] + bbox[2]) / 2))
+        text_y = int(round(new_symbol_y - (bbox[1] + bbox[3]) / 2))
+        dx, dy = self._get_optical_center_offset(new_symbol, fit_font)
+        text_x += dx
+        text_y += dy
 
-        overlay_draw.text((text_x, text_y), new_symbol, fill=rgba_color, font=font)
+        overlay_draw.text((text_x, text_y), new_symbol, fill=rgba_color, font=fit_font)
 
         # Composite
         img = img.convert('RGBA')
@@ -419,28 +557,37 @@ class SymbolInsertGenerator(BaseGenerator):
         slide_progress: float,
         is_boundary: bool,
         current_start_x: int,
-        next_start_x: int
+        next_start_x: int,
+        slot_count: int,
     ) -> Image.Image:
         """Render frame with symbol sliding down into position."""
         width, height = self.config.image_size
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
         center_y = height // 2
+        symbol_center_y = center_y
 
         img = Image.new("RGB", (width, height), self.bg_color)
         draw = ImageDraw.Draw(img)
         font = self._get_unicode_font(symbol_size)
 
+        hi = min(insert_pos, max(0, slot_count - 1))
+        self._draw_position_slots_unicode(
+            draw, slot_count, current_start_x, spacing, center_y, symbol_size, hi
+        )
+        self._draw_add_candidate_panel(draw, symbol_size)
+
         if is_boundary:
             # Boundary insertion: sequence stays in place
             for i, (symbol, color_name) in enumerate(sequence):
-                x = current_start_x + i * spacing
+                shift = 1 if insert_pos == 0 else 0
+                x = current_start_x + (i + shift) * spacing
                 color_rgb = ALL_COLOR_NAMES.get(color_name, (0, 0, 0))
-                self._draw_symbol(draw, symbol, x, center_y, symbol_size, color_rgb, font)
+                self._draw_symbol(draw, symbol, x, symbol_center_y, symbol_size, color_rgb, font)
             
             # Calculate where new symbol slides down
             if insert_pos == 0:
-                x = current_start_x - spacing
+                x = current_start_x
             else:
                 x = current_start_x + len(sequence) * spacing
         else:
@@ -451,13 +598,13 @@ class SymbolInsertGenerator(BaseGenerator):
                 else:
                     x = next_start_x + (i + 1) * spacing
                 color_rgb = ALL_COLOR_NAMES.get(color_name, (0, 0, 0))
-                self._draw_symbol(draw, symbol, x, center_y, symbol_size, color_rgb, font)
+                self._draw_symbol(draw, symbol, x, symbol_center_y, symbol_size, color_rgb, font)
             
             x = next_start_x + insert_pos * spacing
 
         # Draw new symbol sliding down
         initial_y = center_y - symbol_size
-        target_y = center_y
+        target_y = symbol_center_y
         new_symbol_y = int(initial_y + (target_y - initial_y) * slide_progress)
 
         self._draw_symbol(draw, new_symbol, x, new_symbol_y, symbol_size, new_color, font)
@@ -501,10 +648,12 @@ class SymbolInsertGenerator(BaseGenerator):
             obj = {
                 "symbol": f"symbol_{i}",
                 "index": i,
+                "slot_index": i,
                 "symbol_char": symbol,
                 "color_name": color_name,
                 "color_rgb": list(color_rgb),
-                "is_inserted": is_inserted
+                "is_inserted": is_inserted,
+                "is_operation_target": is_inserted,
             }
             
             # Add initial position information

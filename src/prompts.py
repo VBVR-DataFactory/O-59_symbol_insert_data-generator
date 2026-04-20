@@ -20,6 +20,7 @@
 # Unified prompt template (single structure for consistency)
 PROMPT_TEMPLATE = (
     "Insert a {color} {symbol} at position {position}. "
+    "A reference panel in the top-right shows the target symbol. "
     "The animation shows the new symbol fading in above the target position, "
     "then sliding down while other symbols shift to make room."
 )

@@ -1,1 +1,1 @@
-Insert a red ● at position 7. The animation shows the new symbol fading in above the target position, then sliding down while other symbols shift to make room.
+Insert a green ▶ at position 4. A reference panel in the top-right shows the target symbol. The animation shows the new symbol fading in above the target position, then sliding down while other symbols shift to make room.
