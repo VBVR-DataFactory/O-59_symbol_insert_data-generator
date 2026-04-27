@@ -356,10 +356,7 @@ class SymbolInsertGenerator(BaseGenerator):
         for i in range(total_slots):
             cx = start_x + i * spacing
             box = [cx - half, center_y - half, cx + half, center_y + half]
-            if highlight_index is not None and i == highlight_index:
-                draw.rectangle(box, outline=(220, 70, 55), width=4)
-            else:
-                draw.rectangle(box, outline=(170, 170, 170), width=1)
+            draw.rectangle(box, outline=(170, 170, 170), width=1)
             lab = str(i + 1)
             bbox = draw.textbbox((0, 0), lab, font=label_font)
             tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
